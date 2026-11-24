@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Product Photo Resizer</title>
+  <style>
+    :root {
+      font: 100%/1.5 system-ui, sans-serif;
+      color: #172124;
+      background: #edf2f0;
+      --paper: #fff;
+      --muted: #53615e;
+      --accent: #16594c;
+      --line: #cdd9d5;
+      --checkerboard: conic-gradient(#edf0ef 25%, #fff 0 50%, #edf0ef 0 75%, #fff 0) 0 0 / 20px 20px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 75rem; margin: 0 auto; padding: clamp(1.25rem, 4vw, 4rem) clamp(1rem, 4vw, 2rem); }
+    h1, h2, p { margin: 0; }
+    h1 { font: 700 clamp(2.2rem, 6vw, 4.35rem)/1.03 Georgia, serif; letter-spacing: -.06em; }
+    h2 { font-size: 1.15rem; }
+    header p { color: var(--muted); margin-top: .65rem; }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 20rem; gap: 1rem; margin-top: clamp(1.2rem, 4vw, 2.25rem); align-items: start; }
+    section, form { background: var(--paper); border: 1px solid var(--line); border-radius: 1rem; padding: 1.15rem; }
+    .preview-header { display: flex; justify-content: space-between; gap: .4rem 1rem; flex-wrap: wrap; align-items: baseline; margin-bottom: .8rem; }
+    .detail, footer { color: var(--muted); font-size: .9rem; }
+    .stage {
+      display: grid;
+      place-items: center;
+      min-height: clamp(16rem, 46vw, 30rem);
+      padding: clamp(.85rem, 3vw, 1.5rem);
+      border: 1px dashed #8da59e;
+      border-radius: .7rem;
+      background: #f2f6f4;
+      text-align: center;
+    }
+    .stage.dragging { background: #deede7; border-color: var(--accent); }
+    .empty { display: grid; justify-items: center; gap: .65rem; }
+    .empty p { color: var(--muted); }
+    canvas { display: block; max-width: 100%; max-height: min(60vh, 33rem); width: auto; height: auto; object-fit: contain; background: var(--checkerboard); box-shadow: 0 0 0 1px #17212424; }
+    [hidden] { display: none !important; }
+    .file-row { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-top: .75rem; }
+    .file-row p { min-width: 0; overflow-wrap: anywhere; }
+    fieldset { display: grid; gap: .85rem; padding: 0; margin: .85rem 0 0; border: 0; min-width: 0; }
+    .field { display: grid; gap: .3rem; min-width: 0; }
+    .dimensions { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+    label { font-size: .9rem; font-weight: 650; }
+    input, select, button { min-height: 2.75rem; font: inherit; border-radius: .55rem; }
+    input, select { width: 100%; min-width: 0; padding: .45rem .55rem; border: 1px solid #849b93; color: inherit; background: #fff; }
+    input[type="range"] { min-height: 2rem; padding: 0; accent-color: var(--accent); }
+    button { padding: .45rem .85rem; border: 1px solid var(--accent); background: var(--accent); color: #fff; font-weight: 650; cursor: pointer; }
+    button.secondary { background: #fff; color: var(--accent); flex-shrink: 0; }
+    button:hover:enabled { box-shadow: 0 0 0 2px #16594c36; }
+    button:disabled { cursor: default; opacity: .52; }
+    :focus-visible { outline: 3px solid #226fb2; outline-offset: 2px; }
+    #download { width: 100%; margin-top: 1rem; }
+    #notice { margin-top: .65rem; }
+    #notice:empty { margin: 0; }
+    #notice.error { color: #9b2722; }
+    footer { margin-top: 1rem; }
+    @media (max-width: 46rem) { .workspace { grid-template-columns: 1fr; } }
+    @media (max-width: 25rem) { .file-row { align-items: flex-start; flex-direction: column; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Product Photo Resizer</h1>
+      <p>Crop or fit a product photo to the dimensions you need.</p>
+    </header>
+    <div class="workspace">
+      <section aria-labelledby="preview-title">
+        <div class="preview-header">
+          <h2 id="preview-title">Preview</h2>
+          <p class="detail" id="output-size"></p>
+        </div>
+        <div id="stage" class="stage">
+          <div id="empty" class="empty">
+            <button type="button" id="choose">Choose a photo</button>
+            <p>Or drop a JPEG, PNG, or WebP here.</p>
+          </div>
+          <canvas id="preview" role="img" aria-label="Resized product photo preview" hidden></canvas>
+        </div>
+        <input id="file" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" aria-label="Photo file" hidden>
+        <div id="file-row" class="file-row" hidden>
+          <p class="detail" id="source-size"></p>
+          <button type="button" class="secondary" id="replace">Change photo</button>
+        </div>
+        <p id="notice" class="detail" role="status"></p>
+      </section>
+      <form id="settings" novalidate>
+        <h2>Export settings</h2>
+        <fieldset aria-label="Image settings">
+          <div class="field">
+            <label for="preset">Size preset</label>
+            <select id="preset">
+              <option value="custom">Custom</option>
+              <option value="2000x2000" selected>Square · 2000 × 2000</option>
+              <option value="1600x2000">Portrait · 1600 × 2000</option>
+              <option value="2000x1500">Landscape · 2000 × 1500</option>
+            </select>
+          </div>
+          <div class="dimensions">
+            <div class="field">
+              <label for="width">Width (px)</label>
+              <input id="width" type="number" min="1" max="4096" step="1" value="2000" required>
+            </div>
+            <div class="field">
+              <label for="height">Height (px)</label>
+              <input id="height" type="number" min="1" max="4096" step="1" value="2000" required>
+            </div>
+          </div>
+          <div class="field">
+            <label for="fit">Framing</label>
+            <select id="fit">
+              <option value="cover">Crop to fill</option>
+              <option value="contain">Fit entire photo</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="format">File format</label>
+            <select id="format">
+              <option value="image/jpeg">JPEG</option>
+              <option value="image/png">PNG</option>
+              <option value="image/webp">WebP</option>
+            </select>
+          </div>
+          <div id="quality-row" class="field">
+            <label for="quality">Quality <output id="quality-value" for="quality">90%</output></label>
+            <input id="quality" type="range" min="10" max="100" value="90">
+          </div>
+        </fieldset>
+        <button type="submit" id="download" disabled>Download image</button>
+      </form>
+    </div>
+    <footer>Your photo stays in this browser tab.</footer>
+  </main>
+  <script>
+    const MAX_DIMENSION = 4096;
+    const MAX_PREVIEW_DIMENSION = 1000;
+    const FORMATS = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+    const byId = id => document.getElementById(id);
+    const form = byId('settings');
+    const widthInput = byId('width');
+    const heightInput = byId('height');
+    const presetInput = byId('preset');
+    const fitInput = byId('fit');
+    const formatInput = byId('format');
+    const qualityInput = byId('quality');
+    const fileInput = byId('file');
+    const stage = byId('stage');
+    const preview = byId('preview');
+    const download = byId('download');
+    const notice = byId('notice');
+
+    let source = null;
+    let loadNumber = 0;
+    let loading = false;
+    let exporting = false;
+
+    function validDimension(value) {
+      return Number.isInteger(value) && value >= 1 && value <= MAX_DIMENSION;
+    }
+
+    function currentSettings() {
+      const width = widthInput.valueAsNumber;
+      const height = heightInput.valueAsNumber;
+      if (!validDimension(width) || !validDimension(height)) return null;
+      return { width, height, fit: fitInput.value, format: formatInput.value, quality: qualityInput.valueAsNumber / 100 };
+    }
+
+    function placement(imageWidth, imageHeight, width, height, fit) {
+      const widthRatio = width / imageWidth;
+      const heightRatio = height / imageHeight;
+      const scale = fit === 'contain' ? Math.min(widthRatio, heightRatio) : Math.max(widthRatio, heightRatio);
+      const drawnWidth = imageWidth * scale;
+      const drawnHeight = imageHeight * scale;
+      return { x: (width - drawnWidth) / 2, y: (height - drawnHeight) / 2, width: drawnWidth, height: drawnHeight };
+    }
+
+    function drawPhoto(canvas, image, width, height, fit, format, scale = 1) {
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas unavailable');
+      if (format === 'image/jpeg') {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      ctx.scale(canvas.width / width, canvas.height / height);
+      ctx.imageSmoothingQuality = 'high';
+      const box = placement(image.naturalWidth, image.naturalHeight, width, height, fit);
+      ctx.drawImage(image, box.x, box.y, box.width, box.height);
+    }
+
+    function status(message = '', isError = false) {
+      notice.textContent = message;
+      notice.classList.toggle('error', isError);
+    }
+
+    function updatePreview() {
+      const settings = currentSettings();
+      const canPreview = Boolean(source && settings);
+      download.disabled = !canPreview || loading || exporting;
+      preview.hidden = !canPreview;
+      byId('empty').hidden = Boolean(source);
+      byId('file-row').hidden = !source;
+      byId('quality-row').hidden = formatInput.value === 'image/png';
+      byId('quality-value').value = qualityInput.value + '%';
+
+      const invalidMessage = 'Enter whole-number dimensions from 1 to 4096 pixels.';
+      byId('output-size').textContent = settings ? `${settings.width} × ${settings.height} px` : invalidMessage;
+      widthInput.setAttribute('aria-invalid', String(!validDimension(widthInput.valueAsNumber)));
+      heightInput.setAttribute('aria-invalid', String(!validDimension(heightInput.valueAsNumber)));
+      if (!canPreview) return;
+      const { width, height, fit, format } = settings;
+      const scale = Math.min(1, MAX_PREVIEW_DIMENSION / Math.max(width, height));
+      drawPhoto(preview, source.image, width, height, fit, format, scale);
+    }
+
+    async function loadPhoto(file) {
+      const attempt = ++loadNumber;
+      if (file.type ? !Object.hasOwn(FORMATS, file.type) : !/\.(jpe?g|png|webp)$/i.test(file.name)) {
+        loading = false;
+        status('Choose a JPEG, PNG, or WebP image.', true);
+        updatePreview();
+        return;
+      }
+
+      loading = true;
+      download.disabled = true;
+      status('Opening photo…');
+      const objectURL = URL.createObjectURL(file);
+      try {
+        const image = new Image();
+        image.src = objectURL;
+        await image.decode();
+        if (attempt !== loadNumber) return;
+        if (!image.naturalWidth || !image.naturalHeight) throw new Error('Empty image');
+        source = { name: file.name, image };
+        byId('source-size').textContent = `${file.name} · ${image.naturalWidth} × ${image.naturalHeight} px`;
+        status();
+      } catch {
+        if (attempt === loadNumber) status('This photo could not be opened. Try another image.', true);
+      } finally {
+        URL.revokeObjectURL(objectURL);
+        if (attempt === loadNumber) {
+          loading = false;
+          updatePreview();
+        }
+      }
+    }
+
+    byId('choose').addEventListener('click', () => fileInput.click());
+    byId('replace').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      fileInput.value = '';
+      if (file) loadPhoto(file);
+    });
+    stage.addEventListener('dragover', event => {
+      event.preventDefault();
+      stage.classList.add('dragging');
+    });
+    stage.addEventListener('dragleave', event => {
+      if (!stage.contains(event.relatedTarget)) stage.classList.remove('dragging');
+    });
+    stage.addEventListener('drop', event => {
+      event.preventDefault();
+      stage.classList.remove('dragging');
+      const file = event.dataTransfer.files[0];
+      if (file) loadPhoto(file);
+    });
+
+    form.addEventListener('input', event => {
+      if (event.target === presetInput && presetInput.value !== 'custom') {
+        const [width, height] = presetInput.value.split('x');
+        widthInput.value = width;
+        heightInput.value = height;
+      }
+      if (event.target === widthInput || event.target === heightInput) presetInput.value = 'custom';
+      if (!loading && !exporting) status();
+      updatePreview();
+    });
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const settings = currentSettings();
+      if (!source || !settings || loading || exporting) return;
+
+      const { width, height, fit, format, quality } = settings;
+      const { image, name } = source;
+      const filename = `${name.replace(/\.[^.]+$/, '') || 'photo'}-${width}x${height}.${FORMATS[format]}`;
+      exporting = true;
+      download.disabled = true;
+      status('Preparing download…');
+      try {
+        const canvas = document.createElement('canvas');
+        drawPhoto(canvas, image, width, height, fit, format);
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, format, quality));
+        if (!blob || blob.type !== format) throw new Error('Encoding unavailable');
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+        if (!loading) status(`Download ready · ${filename}`);
+      } catch {
+        if (!loading) status('Could not export this image. Try JPEG or smaller dimensions.', true);
+      } finally {
+        exporting = false;
+        download.disabled = !source || !currentSettings() || loading;
+      }
+    });
+
+    updatePreview();
+  </script>
+</body>
+</html>
